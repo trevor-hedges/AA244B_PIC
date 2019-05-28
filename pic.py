@@ -75,7 +75,7 @@ print(vthi)
 print(vthe)
 
 # NP = 500 # Number of one species
-n_x = 1000
+n_x = 1001
 n_tsteps = 500
 t_tot = delta_t*n_tsteps
 plasma_cycles = (omega_p/(2*np.pi))*t_tot
@@ -164,6 +164,40 @@ def solve_potential(n_x, rho_N, V_L_N, V_R_N):
     
     return(phi_N)
     
+def solve_potential_periodic(n_x, n_N):
+    
+    #print("n_x: " + str(n_x))
+    
+    nvec = np.transpose(np.matrix([n_N]))
+    
+    #k = 2*np.pi/  -n_x/2
+    k_range = np.linspace(-np.pi,np.pi*(1-2/n_x),n_x)
+    
+    #print("k_range: " + str(k_range))
+    
+    kvec = np.matrix(np.transpose([k_range]))
+    j = np.matrix([np.arange(n_x)])
+
+    #print(np.shape(nvec))
+    #print(np.shape(kvec))
+    #print(np.shape(j))
+    step1 = np.exp(-1j*kvec*j)*nvec # Fourier transform of density as function of k
+
+    step2_phi = np.matrix(np.diag(1/k_range**2))*np.matrix(np.exp(1j*kvec*j)) 
+    step2_E = np.matrix(np.diag(1/(1j*k_range)))*np.matrix(np.exp(1j*kvec*j))
+    
+    step3_phi = np.transpose(step1)*step2_phi
+    step3_E = np.transpose(step1)*step2_E
+    
+    phi_N = np.array(1/n_x*step3_phi)
+    efield_N = np.array(1/n_x*step3_E, dtype=float)
+    
+    #print(phi_N[0,:])
+    print(efield_N[0,:])
+    
+    return(phi_N[0,:], efield_N[0,:])
+
+    
 def solve_efield_from_potential(n_x, phi_N, V_L_N, V_R_N):
     """Given potential field, solves for e-field in 1D"""
     
@@ -194,9 +228,9 @@ def integrate_motion(n_x, delta_x, delta_t, E_N, x_i_N, x_e_N, v_i_N, v_e_N, q_i
 #    print(v_i_new_N)
     v_e_new_N = -(q*q_e_N*delta_t)**2/(m_e_N*eps0*delta_x)*E_interp_e_N + v_e_N
     
-    # Calculate new position
-    x_i_new_N = x_i_N + v_i_new_N
-    x_e_new_N = x_e_N + v_e_new_N
+    # Calculate new position with periodic boundaries
+    x_i_new_N = (x_i_N + v_i_new_N) % (n_x-1)
+    x_e_new_N = (x_e_N + v_e_new_N) % (n_x-1)
     
     # Check if particle out of bounds - if so, make its position/velocity NaN
 #    i_outofbounds_L = x_i_new_N<=0
@@ -218,7 +252,7 @@ def delete_edged_particles(n_x, x_N, v_N, q_N, m_N):
     
     margin = 1.0 # Just to be safe - delete if within 1 cell of edge
 
-    indices = np.concatenate((np.where(x_N <= margin)[0], np.where(x_N >= (n_x-margin))[0]))
+    indices = np.concatenate((np.where(x_N <= margin)[0], np.where(x_N >= (n_x-1-margin))[0]))
     
     x_N_new = np.delete(x_N, indices)
     v_N_new = np.delete(v_N, indices)
@@ -277,15 +311,17 @@ if safe_to_run:
         
     for t_N in np.arange(n_tsteps):
         print('evaluating timestep ' + str(t_N))
-        rho_N = interpolate_charges(n_x, x_i_N, x_e_N, q_i_N, q_e_N)
+        n_N = interpolate_charges(n_x, x_i_N, x_e_N, q_i_N, q_e_N)
         
         plt.figure()
-        plt.plot(np.arange(0,n_x,1), rho_N)
+        plt.plot(np.arange(0,n_x,1), n_N)
         plt.savefig("img/rho_N" + str(t_N) + ".png")
         plt.close()
         
-        phi_N = solve_potential(n_x, rho_N, V_L_N, V_R_N)
-        E_N = solve_efield_from_potential(n_x, phi_N, V_L_N, V_R_N)
+        phi_N, E_N = solve_potential_periodic(n_x, n_N)
+        #phi_N = solve_potential(n_x, n_N, V_L_N, V_R_N)
+        
+        # E_N = solve_efield_from_potential(n_x, phi_N, V_L_N, V_R_N)
         x_i_N, x_e_N, v_i_N, v_e_N = integrate_motion(n_x, delta_x, delta_t, E_N, x_i_N, x_e_N, v_i_N, v_e_N, q_i_N, q_e_N, m_i_N, m_e_N)
         
         # Save particle positions
@@ -293,7 +329,7 @@ if safe_to_run:
         #x_e_N_T[t_N,:] = x_e_N
         
         # Delete edge electrons (leaving ions for now)
-        x_e_N, v_e_N, q_e_N, m_e_N = delete_edged_particles(n_x, x_e_N, v_e_N, q_e_N, m_e_N)
+        # x_e_N, v_e_N, q_e_N, m_e_N = delete_edged_particles(n_x, x_e_N, v_e_N, q_e_N, m_e_N)
         
         # Plot particle positions
         phase_plot(x_i_N, x_e_N, v_i_N, v_e_N, t_N, [0, 1000, -5, 5])
