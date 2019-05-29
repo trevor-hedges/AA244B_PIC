@@ -60,14 +60,14 @@ print("N_d=" + str(N_d))
 
 # Define sim params (make these inputs later)
 delta_x = lambda_d/10
-delta_t = 0.02/omega_p
+delta_t = 0.1/omega_p
 print('delta_x=' + str(delta_x) + ' m')
 print('delta_t=' + str(delta_t) + ' s')
 # deltay = deltax
 
 n0_sim = n0/macroparticle_num # m^-1
-Ti = 100 # K
-Te = 100 # K
+Ti = 1 # K
+Te = 1 # K
 vthi = np.sqrt(K*Ti/m_i_phys)*delta_t/delta_x
 vthe = np.sqrt(K*Te/m_e_phys)*delta_t/delta_x
 
@@ -75,15 +75,15 @@ print(vthi)
 print(vthe)
 
 # NP = 500 # Number of one species
-n_x = 1001
+n_x = 101
 n_tsteps = 500
 t_tot = delta_t*n_tsteps
 plasma_cycles = (omega_p/(2*np.pi))*t_tot
 print("Total time to be simulated: " + str(t_tot) + " seconds; " + str(plasma_cycles) + " plasma oscillations")
 
 # Test case initial conditions...
-chunk_start = 450
-chunk_end = 550
+chunk_start = 1
+chunk_end = 99
 chunk_len = chunk_end-chunk_start
 NP = int(np.round(n0_sim*delta_x*chunk_len))
 
@@ -122,6 +122,9 @@ def interpolate_charges(n_x, x_i_N, x_e_N, q_i_N, q_e_N):
     
     ind_x_i_N = np.array(np.floor(x_i_N), dtype=int)
     ind_x_e_N = np.array(np.floor(x_e_N), dtype=int)
+
+    #ind_x_i_NP1 = (ind_x_i_N+1) % n_x
+    #ind_x_e_NP1 = (ind_x_e_N+1) % n_x
     
     # print('ind_x_i: ' + str(ind_x_i_N))
     # print('ind_x_e: ' + str(ind_x_e_N))
@@ -138,9 +141,9 @@ def interpolate_charges(n_x, x_i_N, x_e_N, q_i_N, q_e_N):
     # Count charges and assign to indices
     chg_N = np.zeros(n_x)
     np.add.at(chg_N, ind_x_i_N, chg_j_i_N)
-    np.add.at(chg_N, ind_x_i_N+1, chg_jp1_i_N)
+    np.add.at(chg_N, (ind_x_i_N+1) % n_x, chg_jp1_i_N)
     np.add.at(chg_N, ind_x_e_N, chg_j_e_N)
-    np.add.at(chg_N, ind_x_e_N+1, chg_jp1_e_N)
+    np.add.at(chg_N, (ind_x_e_N+1) % n_x, chg_jp1_e_N)
     
     return(chg_N)
 
@@ -193,7 +196,11 @@ def solve_potential_periodic(n_x, n_N):
     efield_N = np.array(1/n_x*step3_E, dtype=float)
     
     #print(phi_N[0,:])
-    print(efield_N[0,:])
+    #print(efield_N[0,:])
+    
+    print("size: " + str(np.size(efield_N)))
+    print("0: " + str(efield_N[0,0]))
+    print("101: " + str(efield_N[0,100]))
     
     return(phi_N[0,:], efield_N[0,:])
 
@@ -219,8 +226,8 @@ def integrate_motion(n_x, delta_x, delta_t, E_N, x_i_N, x_e_N, v_i_N, v_e_N, q_i
     
     # Interpolate E-field to each particle
     # np.interp uses first-order interpolator, needed when combined w/ first-order charge-to-grid
-    E_interp_i_N = np.interp(x_i_N, np.arange(n_x), E_N)
-    E_interp_e_N = np.interp(x_e_N, np.arange(n_x), E_N)
+    E_interp_i_N = np.interp(x_i_N, np.arange(n_x), E_N, period=n_x)
+    E_interp_e_N = np.interp(x_e_N, np.arange(n_x), E_N, period=n_x)
     
     # Calculate new velocity
     v_i_new_N = (q*q_i_N*delta_t)**2/(m_i_N*eps0*delta_x)*E_interp_i_N + v_i_N
@@ -229,8 +236,8 @@ def integrate_motion(n_x, delta_x, delta_t, E_N, x_i_N, x_e_N, v_i_N, v_e_N, q_i
     v_e_new_N = -(q*q_e_N*delta_t)**2/(m_e_N*eps0*delta_x)*E_interp_e_N + v_e_N
     
     # Calculate new position with periodic boundaries
-    x_i_new_N = (x_i_N + v_i_new_N) % (n_x-1)
-    x_e_new_N = (x_e_N + v_e_new_N) % (n_x-1)
+    x_i_new_N = (x_i_N + v_i_new_N) % (n_x)
+    x_e_new_N = (x_e_N + v_e_new_N) % (n_x)
     
     # Check if particle out of bounds - if so, make its position/velocity NaN
 #    i_outofbounds_L = x_i_new_N<=0
@@ -273,7 +280,7 @@ def phase_plot(x_i_N, x_e_N, v_i_N, v_e_N, tstep, axes):
     plot_electrons = plt.scatter(x_e_N, v_e_N)
     plt.xlim(axes[0:2])
     plt.ylim(axes[2:4])
-    plt.savefig('img/sct_' + str(tstep) + '.png')
+    plt.savefig('img/phase/sct_' + str(tstep) + '.png')
     plt.close()
 
 
@@ -281,8 +288,13 @@ def phase_plot(x_i_N, x_e_N, v_i_N, v_e_N, tstep, axes):
 # Tests...
 if safe_to_run:
 
-    x_i_N = np.linspace(chunk_start,chunk_end,NP)
-    x_e_N = np.linspace(chunk_start+delta_x/2,chunk_end+delta_x/2,NP)
+    x_i_N = np.arange(0,n_x,n_x/NP)
+    print(NP)
+    print(np.size(x_i_N))
+    x_e_N = np.arange(n_x/(2*NP),n_x,n_x/NP)
+    print(np.size(x_e_N))
+    #x_i_N = np.linspace(chunk_start,chunk_end,NP)
+    #x_e_N = np.linspace(chunk_start+delta_x/2,chunk_end+delta_x/2,NP)
     #print(x_i_N)
     #print(x_e_N)
     
@@ -313,10 +325,7 @@ if safe_to_run:
         print('evaluating timestep ' + str(t_N))
         n_N = interpolate_charges(n_x, x_i_N, x_e_N, q_i_N, q_e_N)
         
-        plt.figure()
-        plt.plot(np.arange(0,n_x,1), n_N)
-        plt.savefig("img/rho_N" + str(t_N) + ".png")
-        plt.close()
+
         
         phi_N, E_N = solve_potential_periodic(n_x, n_N)
         #phi_N = solve_potential(n_x, n_N, V_L_N, V_R_N)
@@ -331,8 +340,20 @@ if safe_to_run:
         # Delete edge electrons (leaving ions for now)
         # x_e_N, v_e_N, q_e_N, m_e_N = delete_edged_particles(n_x, x_e_N, v_e_N, q_e_N, m_e_N)
         
+        # Plot normalized E-field
+        plt.figure()
+        plt.plot(np.arange(0,n_x,1), E_N)
+        plt.savefig("img/efield/e_N" + str(t_N) + ".png")
+        plt.close()
+        
+        # Plot normalized charge density
+        plt.figure()
+        plt.plot(np.arange(0,n_x,1), n_N)
+        plt.savefig("img/density/n_N" + str(t_N) + ".png")
+        plt.close()
+        
         # Plot particle positions
-        phase_plot(x_i_N, x_e_N, v_i_N, v_e_N, t_N, [0, 1000, -5, 5])
+        phase_plot(x_i_N, x_e_N, v_i_N, v_e_N, t_N, [98, 102, -5, 5])
     
     #t = np.arange(n_tsteps)*delta_t
 
