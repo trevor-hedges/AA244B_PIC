@@ -13,8 +13,7 @@ import quiet_start
 
 # Define flags
 verbose = 1
-periodic_bc = 1
-fourier_bc = 0
+bc_type = 1 # 0 = fixed potential, 1 = periodic, 2 = periodic + fourier
 
 # Define physical constants
 q_phys = 1.60218E-19 # C
@@ -25,9 +24,11 @@ eps0 = 8.8542E-12 # F/m
 K = 1.3807E-23 # J/K
 
 # Define boundary conditions if necessary
-if not periodic_bc:
+if bc_type == 0:
     V_L = 0
     V_R = 0
+elif bc_type == 1:
+    G = 0 # "Ground" potential
 
 # "True" plasma density to simulate
 n0 = 5E6
@@ -79,7 +80,7 @@ vthe_sim = np.sqrt(K*Te/m_e_sim)*delta_t/delta_x
 print("Normalized ion thermal velocity = " + str(vthi_sim))
 print("Normalized electron thermal velocity = " + str(vthe_sim))
 
-n_x = 501
+n_x = 11
 n_tsteps = 100
 t_tot = delta_t*n_tsteps
 plasma_cycles = (omega_p_phys/(2*np.pi))*t_tot
@@ -170,17 +171,25 @@ def solve_potential(n_x, rho_N, V_L_N, V_R_N):
     
     return(phi_N)
     
-def solve_potential_periodic(n_x, rho_N):
+def solve_potential_periodic(n_x, rho_N, G_N):
     """Given charge densities, solves for potential on 1D periodic grid"""
     
     # Construct A matrix
-    A = np.diag(np.ones(n_x-1),1)+np.diag(-2*np.ones(n_x),0)+np.diag(np.ones(n_x-1),-1)
-    A[-1, 0] = 1
-    A[0, -1] = 1
+    A = np.diag(np.ones(n_x-2),1)+np.diag(-2*np.ones(n_x-1),0)+np.diag(np.ones(n_x-2),-1)
+#    A[-1, 0] = 1
+#    A[0, -1] = 1
     A = -A
+    b = rho_N[1:]
+    b[0] += G_N
+    b[-1] += G_N
     
     # Solve for phi
-    phi_N = np.linalg.solve(A, rho_N)
+    phi_N_no0 = np.linalg.solve(A, b)
+    
+    # Add boundary point
+    phi_N = np.zeros(n_x)
+    phi_N[1:] += phi_N_no0
+    phi_N[0] = G_N
     
     return(phi_N)
     
@@ -291,7 +300,21 @@ def phase_plot(x_i_N, x_e_N, v_i_N, v_e_N, tstep, axes):
     plt.savefig('img/phase/sct_' + str(tstep) + '.png')
     plt.close()
 
-
+def all_plot(NP, n_x, x_i_N, x_e_N, E_N, phi_N, tstep, axes):
+    
+    xr = np.linspace(0,n_x-1,n_x)
+    xrp1 = np.linspace(0,n_x,n_x+1)
+    
+    plt.figure()
+    plt.scatter(x_i_N, np.zeros(NP), color='red', label='ions')
+    plt.scatter(x_e_N, np.zeros(NP), color='blue', label='electrons')
+    plt.plot(xrp1, np.concatenate((phi_N/10, np.array([phi_N[0]/10]))), color='red', label='phi')
+    plt.plot(xrp1, np.concatenate((E_N, np.array([E_N[0]]))), color='blue', label='E')
+    plt.xlim(axes[0:2])
+    plt.ylim(axes[2:4])
+    plt.legend()
+    plt.savefig('img/all_debug/all_' + str(tstep) + '.png')
+    plt.close()
 
 # Tests...
 if safe_to_run:
@@ -324,10 +347,12 @@ if safe_to_run:
         print("Initial ion normalized velocities: " + str(v_i_N))
         print("Initial electron normalized velocities: " + str(v_e_N))
 
-    if not periodic_bc:
+    if bc_type == 0:
         # Nondimensionalize boundary conditions
         V_L_N = eps0/(q_phys*delta_x) * V_L
         V_R_N = eps0/(q_phys*delta_x) * V_R
+    elif bc_type == 1:
+        G_N = eps0/(q_phys*delta_x) * G
 
         
     # Allocate time history of particle trajectories
@@ -339,10 +364,10 @@ if safe_to_run:
         print('evaluating timestep ' + str(t_N))
         chg_N = interpolate_charges(n_x, x_i_N, x_e_N, mnum_i_N, mnum_e_N)
         
-        if fourier_bc:
+        if bc_type==2:
             phi_N, E_N = solve_potential_fourier(n_x, chg_N)
-        elif periodic_bc:
-            phi_N = solve_potential_periodic(n_x, chg_N)
+        elif bc_type==1:
+            phi_N = solve_potential_periodic(n_x, chg_N, G_N)
             E_N = solve_efield_from_potential_periodic(phi_N)
         else:
             phi_N = solve_potential(n_x, chg_N, V_L_N, V_R_N)
@@ -379,6 +404,9 @@ if safe_to_run:
         
         # Plot particle positions
         phase_plot(x_i_new_N, x_e_N, v_i_N, v_e_N, t_N, [0, n_x, -0.3, 0.3])
+    
+        # Make plots of particles + fields superimposed
+        all_plot(NP, n_x, x_i_new_N, x_e_new_N, E_N, phi_N, t_N, [0, n_x, -50000, 50000])
     
         # Set new
         x_i_N = x_i_new_N
