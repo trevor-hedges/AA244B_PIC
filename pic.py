@@ -12,9 +12,9 @@ import matplotlib.pyplot as plt
 import quiet_start
 
 # Define flags
-verbose = 1
+verbose = 0
 bc_type = 1 # 0 = fixed potential, 1 = periodic, 2 = periodic + fourier
-ic_override = 1 # Whether to ignore specifying plasma properties and load pre-set initial particle conditions
+ic_override = 0 # Whether to ignore specifying plasma properties and load pre-set initial particle conditions
 
 # Define physical constants
 q_phys = 1.60218E-19 # C
@@ -32,13 +32,13 @@ elif bc_type == 1:
     G = 0 # "Ground" potential
 
 # "True" plasma density to simulate
-n0 = 5E6
+n0 = 1E7
 
 q_to_m_i = q_phys/m_i_phys
 q_to_m_e = q_phys/m_e_phys
 
 # Define simulation constants
-mi_me_ratio = 1
+mi_me_ratio = 10
 m_e_sim = m_e_phys
 m_i_sim = mi_me_ratio*m_e_phys # Mass of simulated ion
 
@@ -49,8 +49,8 @@ print('simulated macroparticle me=' + str(macroparticle_num*m_e_sim) + " kg")
 print('simulated macroparticle mi=' + str(macroparticle_num*m_i_sim) + " kg")
 
 # Calculate electron Debye length
-Ti = 50;
-Te = 50;
+Ti = 0; # K
+Te = 5; # K
 lambda_d_phys = np.sqrt(eps0*K*Te/(n0*q_phys**2)) # meters
 print("lambda_d=" + str(lambda_d_phys) + " m")
 
@@ -63,8 +63,8 @@ N_d = n0*4/3*np.pi*lambda_d_phys**3
 print("N_d=" + str(N_d))
 
 # Define sim params (make these inputs later)
-delta_x = lambda_d_phys/20 # meters
-delta_t = 0.001/omega_p_phys # s^-1
+delta_x = lambda_d_phys/10 # meters
+delta_t = 0.05/omega_p_phys # s^-1
 print('delta_x=' + str(delta_x) + ' m')
 print('delta_t=' + str(delta_t) + ' s')
 
@@ -78,14 +78,14 @@ print("lambda_d_sim = " + str(lambda_d_sim))
 omega_p_sim = np.sqrt(n0_sim*(macroparticle_num*q_phys)**2/(eps0*m_e_sim*macroparticle_num))
 print("omega_p_sim = " + str(omega_p_sim))
 
-vthi_sim = np.sqrt(K*Ti/m_i_sim)*delta_t/delta_x # Normalized
-vthe_sim = np.sqrt(K*Te/m_e_sim)*delta_t/delta_x
+vthi_sim_N = np.sqrt(K*Ti/m_i_sim)/(omega_p_phys*lambda_d_phys) # Normalized
+vthe_sim_N = np.sqrt(K*Te/m_e_sim)/(omega_p_phys*lambda_d_phys)
 
-print("Normalized ion thermal velocity = " + str(vthi_sim))
-print("Normalized electron thermal velocity = " + str(vthe_sim))
+print("Normalized ion thermal velocity = " + str(vthi_sim_N))
+print("Normalized electron thermal velocity = " + str(vthe_sim_N))
 
-n_x = 11
-n_tsteps = 1000
+n_x = 101
+n_tsteps = 150
 t_tot = delta_t*n_tsteps
 plasma_cycles = (omega_p_phys/(2*np.pi))*t_tot
 print("Total time to be simulated: " + str(t_tot) + " seconds; " + str(plasma_cycles) + " plasma oscillations")
@@ -310,9 +310,10 @@ def calculate_energy(v_i_old_N, v_e_old_N, v_i_new_N,
     E_tot = KE_i + KE_e + PE
     
     # Print stuff
-    print("Ion kinetic: " + str(KE_i))
-    print("Electron kinetic: " + str(KE_e))
-    print("Electric potential: " + str(PE))
+    if verbose:
+        print("Ion kinetic: " + str(KE_i))
+        print("Electron kinetic: " + str(KE_e))
+        print("Electric potential: " + str(PE))
     
     return(E_tot, KE_i, KE_e, PE)
 
@@ -391,20 +392,22 @@ if safe_to_run:
     #    x_e_N = np.arange(n_x/(2*NP)+margin,n_x-margin,n_x/NP)
         jumble_pos = 1
         if jumble_pos:
-            jumble_factor = 0.5
-            x_i_N = (np.linspace(margin,n_x-margin,NP) + jumble_factor*np.random.normal(size=NP)) % n_x
-            x_e_N = (np.linspace(margin,n_x-margin,NP) + jumble_factor*np.random.normal(size=NP)) % n_x
+            jumble_factor = 0.1
+            x_i_NN = (np.linspace(margin,n_x-margin,NP) + jumble_factor*np.random.normal(size=NP)) % n_x
+            x_e_NN = (np.linspace(margin,n_x-margin,NP) + jumble_factor*np.random.normal(size=NP)) % n_x
         else:
-            x_i_N = np.linspace(margin,n_x-margin,NP)
-            x_e_N = np.linspace(n_x/(2*NP)+margin,n_x-margin,NP)
+            x_i_NN = np.linspace(margin,n_x-margin,NP)
+            x_e_NN = np.linspace(n_x/(2*NP)+margin,n_x-margin,NP)
+        x_i_N = x_i_NN*delta_x_N
+        x_e_N = x_e_NN*delta_x_N
         
         if verbose:
             print("Initial ion locations: " + str(x_i_N))
             print("Initial electron locations: " + str(x_e_N))
             
         # Initialize particle velocities using quiet start technique    
-        v_i_N = quiet_start.maxwellian(NP, 0, vthe_sim)
-        v_e_N = quiet_start.maxwellian(NP, vthe_sim*0, vthe_sim)    
+        v_i_N = quiet_start.maxwellian(NP, 0, vthi_sim_N)
+        v_e_N = quiet_start.maxwellian(NP, vthe_sim_N/50, vthe_sim_N/3)    
         if verbose:
             print("Initial ion normalized velocities: " + str(v_i_N))
             print("Initial electron normalized velocities: " + str(v_e_N))
@@ -487,7 +490,7 @@ if safe_to_run:
         x_e_NN = x_e_N/delta_x_N
         v_i_NN = v_i_N*delta_t_N/delta_x_N
         v_e_NN = v_e_N*delta_t_N/delta_x_N
-        phase_plot(x_i_NN, x_e_NN, v_i_NN, v_e_NN, t_N, [0, n_x, -0.3, 0.3])
+        phase_plot(x_i_NN, x_e_NN, v_i_NN, v_e_NN, t_N, [0, n_x, -.2, .2])
     
         # Make plots of particles + fields superimposed at time t=0
         all_plot(NP, n_x, x_i_NN, x_e_NN, E_N, phi_N, t_N, [0, n_x, -50000, 50000])
