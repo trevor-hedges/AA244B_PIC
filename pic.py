@@ -7,14 +7,16 @@ Created on Wed May 15 08:27:32 2019
 """
 
 import numpy as np
+import numpy.linalg as linalg
 import matplotlib.pyplot as plt
-
+plt.ioff()
 import quiet_start
 
 # Define flags
 verbose = 0
 bc_type = 1 # 0 = fixed potential, 1 = periodic, 2 = periodic + fourier
 ic_override = 0 # Whether to ignore specifying plasma properties and load pre-set initial particle conditions
+velocity_override = 0
 
 # Define physical constants
 q_phys = 1.60218E-19 # C
@@ -32,25 +34,25 @@ elif bc_type == 1:
     G = 0 # "Ground" potential
 
 # "True" plasma density to simulate
-n0 = 1E7
+n0 = 1E8
 
 q_to_m_i = q_phys/m_i_phys
 q_to_m_e = q_phys/m_e_phys
 
 # Define simulation constants
-mi_me_ratio = 10
+mi_me_ratio = 50
 m_e_sim = m_e_phys
 m_i_sim = mi_me_ratio*m_e_phys # Mass of simulated ion
 
 # Define number of particles per macroparticle
-macroparticle_num = 50000
+macroparticle_num = 100000
 
 print('simulated macroparticle me=' + str(macroparticle_num*m_e_sim) + " kg")
 print('simulated macroparticle mi=' + str(macroparticle_num*m_i_sim) + " kg")
 
 # Calculate electron Debye length
 Ti = 0; # K
-Te = 5; # K
+Te = 300; # K
 lambda_d_phys = np.sqrt(eps0*K*Te/(n0*q_phys**2)) # meters
 print("lambda_d=" + str(lambda_d_phys) + " m")
 
@@ -64,7 +66,7 @@ print("N_d=" + str(N_d))
 
 # Define sim params (make these inputs later)
 delta_x = lambda_d_phys/10 # meters
-delta_t = 0.05/omega_p_phys # s^-1
+delta_t = 0.01/omega_p_phys # s^-1
 print('delta_x=' + str(delta_x) + ' m')
 print('delta_t=' + str(delta_t) + ' s')
 
@@ -78,14 +80,15 @@ print("lambda_d_sim = " + str(lambda_d_sim))
 omega_p_sim = np.sqrt(n0_sim*(macroparticle_num*q_phys)**2/(eps0*m_e_sim*macroparticle_num))
 print("omega_p_sim = " + str(omega_p_sim))
 
-vthi_sim_N = np.sqrt(K*Ti/m_i_sim)/(omega_p_phys*lambda_d_phys) # Normalized
-vthe_sim_N = np.sqrt(K*Te/m_e_sim)/(omega_p_phys*lambda_d_phys)
+# Added 2...
+vthi_sim_N = np.sqrt(2*K*Ti/m_i_sim)/(omega_p_phys*lambda_d_phys) # Normalized
+vthe_sim_N = np.sqrt(2*K*Te/m_e_sim)/(omega_p_phys*lambda_d_phys)
 
 print("Normalized ion thermal velocity = " + str(vthi_sim_N))
 print("Normalized electron thermal velocity = " + str(vthe_sim_N))
 
 n_x = 101
-n_tsteps = 150
+n_tsteps = 4096 # Power of 2 to make FFT at end go faster
 t_tot = delta_t*n_tsteps
 plasma_cycles = (omega_p_phys/(2*np.pi))*t_tot
 print("Total time to be simulated: " + str(t_tot) + " seconds; " + str(plasma_cycles) + " plasma oscillations")
@@ -175,7 +178,7 @@ def solve_potential(n_x, rho_N, V_L_N, V_R_N):
     FDPHI_N = -(np.diag(np.ones(n_x-1),1)+np.diag(-2*np.ones(n_x),0)+np.diag(np.ones(n_x-1),-1))
 
     # Perform solution    
-    phi_N = np.linalg.solve(FDPHI_N,b)
+    phi_N = linalg.solve(FDPHI_N,b)
     # phi is nondimensional: phi_nondim=phi*eps0/(q*delta_x^2)
     
     return(phi_N)
@@ -197,7 +200,8 @@ def solve_potential_periodic(n_x, rho_N, G_N, delta_x_N):
     b[-1] += G_N
     
     # Solve for phi
-    phi_N_no0 = np.linalg.solve(A, b)
+    #phi_N_no0 = np.linalg.solve(A, b)
+    phi_N_no0 = linalg.solve(A, b)
     
     # Add boundary point
     phi_N = np.zeros(n_x)
@@ -284,7 +288,8 @@ def integrate_motion(n_x, E_N, x_i_N, x_e_N, v_i_N, v_e_N, delta_x_N, delta_t_N,
         
 def calculate_energy(v_i_old_N, v_e_old_N, v_i_new_N,
                      v_e_new_N, mnum_i_N, mnum_e_N, rho_N, phi_N, delta_x,
-                     omega_p_phys, lambda_d_phys, n0, m_e_phys, mi_me_ratio):
+                     omega_p_phys, lambda_d_phys, n0, m_e_phys, mi_me_ratio,
+                     x_i_old_N, x_e_old_N, delta_x_N, n_x, E_N):
     """Calculate energy in system at time t. INPUTS: x_i(t), x_e(t),
     v_i(t-delta_t/2), v_e(t-delta_t/2), v_i(t+delta_t/2), v_e(t+delta_t/2)
     macroparticle number (ions), macroparticle number (electrons),
@@ -304,28 +309,66 @@ def calculate_energy(v_i_old_N, v_e_old_N, v_i_new_N,
     # Calculate dimensional electric potential energy
     PE = delta_x*omega_p_phys**2*lambda_d_phys**2*m_e_phys*n0/2*np.inner(rho_N, phi_N)
     
-    #PE_N = 1/2*q_phys**2/eps0*np.inner(chg_N, phi_N)
+    # Calculate dimensional electric potential energy a different way
+    x_i_old_NN = x_i_old_N/delta_x_N
+    x_e_old_NN = x_e_old_N/delta_x_N
+    
+    # interpolate phi to particle positions
+    phi_i_interp = np.interp(x_i_old_NN, np.arange(n_x), phi_N, period=n_x)
+    phi_e_interp = np.interp(x_e_old_NN, np.arange(n_x), phi_N, period=n_x)
+    
+    PE2_i = 1/2*omega_p_phys**2*lambda_d_phys**2*m_e_phys*np.inner(mnum_i_N, phi_i_interp)
+    PE2_e = -1/2*omega_p_phys**2*lambda_d_phys**2*m_e_phys*np.inner(mnum_e_N, phi_e_interp)
+    PE2 = PE2_i + PE2_e
+    #1/2*q_phys**2/eps0*np.inner(chg_N, phi_N)
+    
+    # Calculate dimensional electric potential energy a third way
+    E_dim = E_N*m_e_phys*lambda_d_phys*omega_p_phys**2/q_phys
+    PE3 = 1/2*eps0*delta_x*np.inner(E_dim, E_dim)
     
     # Calculate total energy 
     E_tot = KE_i + KE_e + PE
+    E_tot2 = KE_i + KE_e + PE2
+    
+    # Normalize it
+    En_N = E_tot/(m_e_phys*omega_p_phys**2)
     
     # Print stuff
     if verbose:
         print("Ion kinetic: " + str(KE_i))
         print("Electron kinetic: " + str(KE_e))
         print("Electric potential: " + str(PE))
+        print("Electric potential2: " + str(PE2))
+        print("Electric potential3: " + str(PE3))
+        print("Total2: " + str(E_tot2))
+        print("Total1_N: " + str(En_N))
     
     return(E_tot, KE_i, KE_e, PE)
 
 def phase_plot(x_i_N, x_e_N, v_i_N, v_e_N, tstep, axes):
 
     plt.figure()
-    plot_ions = plt.scatter(x_i_N, v_i_N)
-    plot_electrons = plt.scatter(x_e_N, v_e_N)
+    plt.scatter(x_i_N, v_i_N)
+    plt.scatter(x_e_N, v_e_N)
     plt.xlim(axes[0:2])
     plt.ylim(axes[2:4])
     plt.savefig('img/phase/sct_' + str(tstep) + '.png')
     plt.close()
+    
+#    plt.figure()
+#    binsize = 20
+#    plt.hist2d(x_i_N, v_i_N, bins=(binsize, binsize), cmap=plt.cm.plasma)
+#    plt.xlim(axes[0:2])
+#    plt.ylim(axes[2:4])
+#    plt.savefig('img/phase/hist_i_' + str(tstep) + ' .png')
+#    plt.close()
+#    
+#    plt.figure()
+#    plt.hist2d(x_e_N, v_e_N, bins=(binsize, binsize), cmap=plt.cm.plasma)
+#    plt.xlim(axes[0:2])
+#    plt.ylim(axes[2:4])
+#    plt.savefig('img/phase/hist_e_' + str(tstep) + '.png')
+#    plt.close()
 
 def all_plot(NP, n_x, x_i_N, x_e_N, E_N, phi_N, tstep, axes):
     
@@ -358,6 +401,15 @@ def energy_plot(n_tsteps, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t):
     plt.savefig("img/energy/energy_vs_time.png")
     plt.close()
 
+def fft_time_plot(n_tsteps, fft_abs, p_n):
+    
+    plt.figure()
+    plt.plot(np.arange(n_tsteps), fft_abs)
+    plt.savefig("img/fft/fft_e_" + str(p_n) + ".png")
+    plt.close()
+    
+    np.save("img/fft/fft_e_" + str(p_n), fft_abs)
+
 # Tests...
 if safe_to_run:
 
@@ -367,16 +419,27 @@ if safe_to_run:
     
     if ic_override:
         
-        delta_x = 1
-        delta_t = 3E-6
+        #delta_x = 0.0053
+        #delta_t = 1.7725E-7
         
         # Nondimensionalize constants
-        delta_x_N = delta_x/lambda_d_phys
-        delta_t_N = delta_t*omega_p_phys
+        #lambda_d_phys = 0.0526
+        #omega_p_phys = 5.6416E5
+        #delta_x_N = delta_x/lambda_d_phys
+        #delta_t_N = delta_t*omega_p_phys
         
-        NP = 8
-        x_i_NN = np.array([4.5, 4.9, 5.0, 5.1, 5.5, 6, 6.5, 8])
-        x_e_NN = np.array([1, 1.4, 1.6, 2.6, 3.5, 4.7, 7, 9])
+        
+        #x_i_N = np.array([0.0714, 0.1429, 0.2143, 0.2857, 0.3571, 0.4286, 0.5, 0.5714, 0.6429, 0.7143, 0.7857, 0.8571, 0.9286, 0.99])
+        #x_e_N = np.array([0.0357, 0.1071, 0.1786, 0.25, 0.3214, 0.3929, 0.4643, 0.5357, 0.6071, 0.6786, 0.7500, 0.8214, 0.8929, 0.9643])
+        
+        x_i_NN = np.array([n_x/10, n_x*6/10])
+        x_e_NN = np.array([(n_x+1)/10, (n_x+1)*6/10])
+        
+        
+        NP = np.size(x_i_NN)
+
+        #x_i_NN = np.array([4.5, 4.9, 5.0, 5.1, 5.5, 6, 6.5, 8])
+        #x_e_NN = np.array([1, 1.4, 1.6, 2.6, 3.5, 4.7, 7, 9])
         #v_i_NN = np.array([0,0,0,0,0,0,0,0])
         #v_e_NN = np.array([0,0,0,0,0,0,0,0])
         
@@ -396,8 +459,8 @@ if safe_to_run:
             x_i_NN = (np.linspace(margin,n_x-margin,NP) + jumble_factor*np.random.normal(size=NP)) % n_x
             x_e_NN = (np.linspace(margin,n_x-margin,NP) + jumble_factor*np.random.normal(size=NP)) % n_x
         else:
-            x_i_NN = np.linspace(margin,n_x-margin,NP)
-            x_e_NN = np.linspace(n_x/(2*NP)+margin,n_x-margin,NP)
+            x_i_NN = np.linspace(margin,n_x-margin,NP) % n_x
+            x_e_NN = np.linspace(n_x/(2*NP)+margin,n_x-margin,NP) % n_x
         x_i_N = x_i_NN*delta_x_N
         x_e_N = x_e_NN*delta_x_N
         
@@ -405,12 +468,16 @@ if safe_to_run:
             print("Initial ion locations: " + str(x_i_N))
             print("Initial electron locations: " + str(x_e_N))
             
-        # Initialize particle velocities using quiet start technique    
+        # Initialize particle velocities using not-quiet start technique    
         v_i_N = quiet_start.maxwellian(NP, 0, vthi_sim_N)
-        v_e_N = quiet_start.maxwellian(NP, vthe_sim_N/50, vthe_sim_N/3)    
-        if verbose:
-            print("Initial ion normalized velocities: " + str(v_i_N))
-            print("Initial electron normalized velocities: " + str(v_e_N))
+        v_e_N = quiet_start.maxwellian(NP, 0, vthe_sim_N)    
+#        if verbose:
+#            print("Initial ion normalized velocities: " + str(v_i_N))
+#            print("Initial electron normalized velocities: " + str(v_e_N))
+        if velocity_override:
+            v_i_N = np.zeros(np.size(x_i_N))
+            v_e_N = np.zeros(np.size(x_e_N))
+            v_e_N[int(4*np.size(x_e_N)/10):int(6*np.size(x_e_N)/10)] = 0.1*delta_x_N/delta_t_N
 
     # Allocate total energy array
     Etot_vs_t = np.zeros(n_tsteps)
@@ -435,8 +502,12 @@ if safe_to_run:
     #delta_t_N = delta_t*omega_p_phys
 
     # Allocate time history of particle trajectories
-    #x_i_N_T = np.zeros([n_tsteps, np.size(x_i_N)])
-    #x_e_N_T = np.zeros([n_tsteps, np.size(x_i_N)])
+    x_i_N_T = np.zeros([n_tsteps, np.size(x_i_N)])
+    x_e_N_T = np.zeros([n_tsteps, np.size(x_e_N)])
+    v_i_N_T = np.zeros([n_tsteps, np.size(v_i_N)])
+    v_e_N_T = np.zeros([n_tsteps, np.size(v_e_N)])
+    E_N_T = np.zeros([n_tsteps, n_x])
+    phi_N_T = np.zeros([n_tsteps, n_x])
 
     # Main Loop        
     for t_N in np.arange(n_tsteps):
@@ -454,19 +525,24 @@ if safe_to_run:
             E_N = solve_efield_from_potential(n_x, phi_N, V_L_N, V_R_N)
             
         x_i_new_N, x_e_new_N, v_i_new_N, v_e_new_N = integrate_motion(n_x, E_N, x_i_N, x_e_N, v_i_N, v_e_N, delta_x_N, delta_t_N, mi_me_ratio)
-        
+
         # Calculate total energy
         #E_old = calculate_energy(x_i_N, x_e_N, v_i_N, v_e_N, v_i_new_N, v_e_new_N, mnum_i_N, mnum_e_N, chg_N, phi_N)
         Etot_vs_t[t_N], KEi_vs_t[t_N], KEe_vs_t[t_N], PE_vs_t[t_N] = calculate_energy(v_i_N, v_e_N, v_i_new_N,
                      v_e_new_N, mnum_i_N, mnum_e_N, rho_N, phi_N, delta_x,
-                     omega_p_phys, lambda_d_phys, n0, m_e_phys, mi_me_ratio)
+                     omega_p_phys, lambda_d_phys, n0, m_e_phys, mi_me_ratio, x_i_N,
+                     x_e_N, delta_x_N, n_x, E_N)
         
         # Print to console
         print("Total system energy = " + str(Etot_vs_t[t_N]) + " J/m^2")
         
         # Save particle positions
-        #x_i_N_T[t_N,:] = x_i_N
-        #x_e_N_T[t_N,:] = x_e_N
+        x_i_N_T[t_N,:] = x_i_N
+        x_e_N_T[t_N,:] = x_e_N
+        v_i_N_T[t_N,:] = v_i_N
+        v_e_N_T[t_N,:] = v_e_N
+        E_N_T[t_N,:] = E_N
+        phi_N_T[t_N,:] = phi_N
                 
         # Plot normalized E-field
         plt.figure()
@@ -490,7 +566,7 @@ if safe_to_run:
         x_e_NN = x_e_N/delta_x_N
         v_i_NN = v_i_N*delta_t_N/delta_x_N
         v_e_NN = v_e_N*delta_t_N/delta_x_N
-        phase_plot(x_i_NN, x_e_NN, v_i_NN, v_e_NN, t_N, [0, n_x, -.2, .2])
+        phase_plot(x_i_NN, x_e_NN, v_i_NN, v_e_NN, t_N, [0, n_x, -1, 1])
     
         # Make plots of particles + fields superimposed at time t=0
         all_plot(NP, n_x, x_i_NN, x_e_NN, E_N, phi_N, t_N, [0, n_x, -50000, 50000])
@@ -505,8 +581,25 @@ if safe_to_run:
     # Save plot of total energy
     energy_plot(n_tsteps, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t)
 
+    np.save("pos/ion_positions.npy", x_i_N_T)
+    np.save("pos/electron_positions.npy", x_e_N_T)
+    np.save("pos/ion_velocities.npy", v_i_N_T)
+    np.save("pos/electron_velocities.npy", v_e_N_T)
+    np.save("pos/Efield.npy", E_N_T)
+    np.save("pos/phifield.npy", phi_N_T)
+    np.save("pos/total_energy.npy", Etot_vs_t)
+    np.save("pos/KEi.npy", KEi_vs_t)
+    np.save("pos/KEe.npy", KEe_vs_t)
+    np.save("pos/PE.npy", PE_vs_t)
+    
 
+    # FFT output position
+    if NP < 1000:
+        for p_n in np.arange(NP):
+            fft_time_plot(n_tsteps, np.abs(np.fft.fft(x_e_N_T[:,p_n])), p_n)
+    
 
+    
 
 #plt.figure()
 #plt.plot(t,x_i_N_T)
