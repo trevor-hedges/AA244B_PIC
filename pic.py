@@ -8,29 +8,30 @@ Created on Wed May 15 08:27:32 2019
 
 import time
 import os, sys
+import configparser
 import numpy as np
 import numpy.linalg as linalg
 import matplotlib.pyplot as plt
+import dirs
 plt.ioff()
 import quiet_start
 import pic_code
 import pic_plot
-import configparser
+import helper_functions
 
 # Load config file specified
 config = configparser.ConfigParser()
 config.read("config.txt")
 
 # Directory to save output files to
-output_dir = 'output/' + config["CASE"]["profile_name"]
-os.makedirs(output_dir + '/pos')
-os.makedirs(output_dir + '/img/efield')
-os.makedirs(output_dir + '/img/phi')
-os.makedirs(output_dir + '/img/density')
-os.makedirs(output_dir + '/img/energy')
-os.makedirs(output_dir + '/img/fft')
-os.makedirs(output_dir + '/img/all_debug')
-os.makedirs(output_dir + '/img/phase')
+output_dir = 'output/' + config["CASE"]["profile_name"] + '/'
+
+output_dirs = dirs.get_dirs(output_dir)
+
+# helper_functions.check_make([output_dir + '/pos', output_dir + '/img/efield', output_dir + '/img/phi',
+#                             output_dir + '/img/density', output_dir + '/img/energy',
+#                             output_dir + '/img/fft', output_dir + '/img/all_debug',
+#                             output_dir + '/img/phase'])
 
 # Define flags
 verbose = bool(int(config["FLAGS"]["verbose"]))
@@ -292,18 +293,18 @@ if safe_to_run:
             # Plot normalized E-field
             plt.figure()
             plt.plot(np.arange(0,n_x,1), E_N)
-            plt.savefig(output_dir + "/img/efield/e_N" + str(t_N) + ".png")
+            plt.savefig(output_dirs['e_field'] + "e_N" + str(t_N) + ".png")
             plt.close()
 
             plt.figure()
             plt.plot(np.arange(0,n_x,1), phi_N)
-            plt.savefig(output_dir + "/img/phi/phi_N" + str(t_N) + ".png")
+            plt.savefig(output_dirs['phi'] + "phi_N" + str(t_N) + ".png")
             plt.close()
 
             # Plot normalized charge density
             plt.figure()
             plt.plot(np.arange(0,n_x,1), rho_N)
-            plt.savefig(output_dir + "/img/density/rho_N" + str(t_N) + ".png")
+            plt.savefig(output_dirs['density'] + "rho_N" + str(t_N) + ".png")
             plt.close()
             t1 = time.time()
             if verbose:
@@ -316,14 +317,14 @@ if safe_to_run:
             x_e_NN = x_e_N/delta_x_N
             v_i_NN = v_i_N*delta_t_N/delta_x_N
             v_e_NN = v_e_N*delta_t_N/delta_x_N
-            pic_plot.phase_plot(x_i_NN, x_e_NN, v_i_NN, v_e_NN, t_N, [0, n_x, -1, 1], output_dir)
+            pic_plot.phase_plot(x_i_NN, x_e_NN, v_i_NN, v_e_NN, t_N, [0, n_x, -1, 1], output_dirs['phase'])
             t1 = time.time()
             if verbose:
                 print("Saved phase plot: " + str(t1-t0) + " sec")
 
             # Make plots of particles + fields superimposed at time t=0
             t0 = time.time()
-            pic_plot.all_plot(NP, n_x, x_i_NN, x_e_NN, E_N, phi_N, t_N, [0, n_x, -50000, 50000], output_dir)
+            pic_plot.all_plot(NP, n_x, x_i_NN, x_e_NN, E_N, phi_N, t_N, [0, n_x, -50000, 50000], output_dirs['all_debug'])
             t1 = time.time()
             if verbose:
                 print("Saved all-plot: " + str(t1-t0) + " sec")
@@ -339,21 +340,21 @@ if safe_to_run:
             print("Updated positions and velocities: " + str(t1-t0) + " sec")
 
     # Save plot of total energy
-    pic_plot.energy_plot(n_tsteps, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t, output_dir)
+    pic_plot.energy_plot(n_tsteps, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t, output_dirs['energy'])
 
-    np.save(output_dir + "/pos/ion_positions.npy", x_i_N_T)
-    np.save(output_dir + "/pos/electron_positions.npy", x_e_N_T)
-    np.save(output_dir + "/pos/ion_velocities.npy", v_i_N_T)
-    np.save(output_dir + "/pos/electron_velocities.npy", v_e_N_T)
-    np.save(output_dir + "/pos/Efield.npy", E_N_T)
-    np.save(output_dir + "/pos/phifield.npy", phi_N_T)
-    np.save(output_dir + "/pos/total_energy.npy", Etot_vs_t)
-    np.save(output_dir + "/pos/KEi.npy", KEi_vs_t)
-    np.save(output_dir + "/pos/KEe.npy", KEe_vs_t)
-    np.save(output_dir + "/pos/PE.npy", PE_vs_t)
+    np.save(output_dirs['data'] + "ion_positions.npy", x_i_N_T)
+    np.save(output_dirs['data'] + "electron_positions.npy", x_e_N_T)
+    np.save(output_dirs['data'] + "ion_velocities.npy", v_i_N_T)
+    np.save(output_dirs['data'] + "electron_velocities.npy", v_e_N_T)
+    np.save(output_dirs['data'] + "Efield.npy", E_N_T)
+    np.save(output_dirs['data'] + "phifield.npy", phi_N_T)
+    np.save(output_dirs['data'] + "total_energy.npy", Etot_vs_t)
+    np.save(output_dirs['data'] + "KEi.npy", KEi_vs_t)
+    np.save(output_dirs['data'] + "KEe.npy", KEe_vs_t)
+    np.save(output_dirs['data'] + "PE.npy", PE_vs_t)
 
 
     # FFT output position
     if NP < 1000:
         for p_n in np.arange(NP):
-            pic_plot.fft_time_plot(n_tsteps, np.abs(np.fft.fft(x_e_N_T[:,p_n])), p_n, output_dir)
+            pic_plot.fft_time_plot(n_tsteps, np.abs(np.fft.fft(x_e_N_T[:,p_n])), p_n, output_dirs['fft'])
