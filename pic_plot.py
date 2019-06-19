@@ -1,5 +1,40 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import animation
+
+def make_1D_vs_t_NN_movie(F_T, t_NN_T, var, output_dir, fps=10, dpi=100):
+
+    # Get number of tsteps and deltaxs
+    n_tsteps_saved = np.shape(F_T)[0]
+    n_x = np.shape(F_T)[1]
+
+    # Get min and max values for plotting
+    F_T_min = np.min(F_T)
+    F_T_max = np.max(F_T)
+    axis_F_T = [0, n_x, F_T_min, F_T_max]
+
+    # Iterate through all timesteps that were saved
+    #f_movie_fig = plt.figure(figsize=(16,18))
+    f_movie_fig = plt.figure()
+
+    FFMpegWriter = animation.writers['ffmpeg_file']
+    metadata = dict(title='', artist='Trevor Hedges', comment='')
+    writer = FFMpegWriter(fps=fps, metadata=metadata)
+
+    with writer.saving(f_movie_fig, output_dir + var + ".mp4", dpi):
+        for t_entry in np.arange(n_tsteps_saved):
+
+            f_movie_fig.clf()
+            f_movie_plt = f_movie_fig.add_subplot(111)
+            f_movie_plt.plot(np.arange(0,n_x+1,1), np.concatenate((F_T[t_entry,:], [F_T[t_entry,0]])))
+            f_movie_plt.set_xlim(axis_F_T[0], axis_F_T[1])
+            f_movie_plt.set_ylim(axis_F_T[2], axis_F_T[3])
+            f_movie_plt.set_title(r'$\tilde{\tilde{t}}=$' + str(t_NN_T[t_entry]))
+            f_movie_plt.set_xlabel(r'$\tilde{\tilde{x}}$')
+            f_movie_plt.set_ylabel(var)
+            f_movie_plt.grid()
+            writer.grab_frame()
+
 
 def phase_plot(x_i_N, x_e_N, v_i_N, v_e_N, tstep, axes, output_dir):
 

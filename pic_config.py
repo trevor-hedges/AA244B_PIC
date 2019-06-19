@@ -27,9 +27,9 @@ config['PLOTS']['fft'] = "0"
 
 # Save data flags
 config['SAVE'] = {}
-config['SAVE']['efield'] = "0"
-config['SAVE']['phi'] = "0"
-config['SAVE']['energy'] = "0"
+config['SAVE']['efield'] = "1"
+config['SAVE']['phi'] = "1"
+config['SAVE']['energy'] = "1"
 config['SAVE']['pos'] = "1"
 config['SAVE']['vel'] = "1"
 config['SAVE']['save_every_ntsteps'] = input("Specify number of timesteps per data-save: ")

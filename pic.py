@@ -7,7 +7,7 @@ Created on Wed May 15 08:27:32 2019
 """
 
 import time
-import os, sys
+import os, sys, os.path
 import argparse
 import configparser
 import numpy as np
@@ -24,7 +24,11 @@ import helper_functions
 argparser = argparse.ArgumentParser()
 argparser.add_argument("config_file", help="Name of config file to run")
 args = argparser.parse_args()
-config_file = args.config_file + ".txt"
+# Make sure config file has text file extension
+if os.path.splitext(args.config_file)[1] != '.txt':
+    config_file = args.config_file + ".txt"
+else:
+    config_file = args.config_file
 
 # Load config file specified
 config = configparser.ConfigParser()
@@ -323,20 +327,6 @@ if safe_to_run:
             if verbose:
                 print("Saved particle positions: " + str(t1-t0) + " sec")
 
-        if plot_efield:
-            t0 = time.time()
-            # Plot normalized E-field
-            plt.figure()
-            plt.plot(np.arange(0,n_x,1), E_N)
-            plt.savefig(output_dirs['e_field'] + "e_N" + str(t_N) + ".png")
-            plt.close()
-
-        if plot_phi:
-            plt.figure()
-            plt.plot(np.arange(0,n_x,1), phi_N)
-            plt.savefig(output_dirs['phi'] + "phi_N" + str(t_N) + ".png")
-            plt.close()
-
         # Plot normalized charge density
         if plot_density:
             plt.figure()
@@ -382,6 +372,7 @@ if safe_to_run:
         pic_plot.energy_plot(t_N_T, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t, output_dirs['energy'])
 
     # Save what is specified
+    np.save(output_dirs['data'] + 'time.npy', t_N_T)
     if save_pos:
         np.save(output_dirs['data'] + "ion_positions.npy", x_i_N_T)
         np.save(output_dirs['data'] + "electron_positions.npy", x_e_N_T)
@@ -389,9 +380,9 @@ if safe_to_run:
         np.save(output_dirs['data'] + "ion_velocities.npy", v_i_N_T)
         np.save(output_dirs['data'] + "electron_velocities.npy", v_e_N_T)
     if save_efield:
-        np.save(output_dirs['data'] + "Efield.npy", E_N_T)
+        np.save(output_dirs['data'] + "e_field.npy", E_N_T)
     if save_phi:
-        np.save(output_dirs['data'] + "phifield.npy", phi_N_T)
+        np.save(output_dirs['data'] + "phi_field.npy", phi_N_T)
     if save_energy:
         np.save(output_dirs['data'] + "total_energy.npy", Etot_vs_t)
         np.save(output_dirs['data'] + "KEi.npy", KEi_vs_t)
