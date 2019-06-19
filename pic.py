@@ -24,7 +24,7 @@ import helper_functions
 argparser = argparse.ArgumentParser()
 argparser.add_argument("config_file", help="Name of config file to run")
 args = argparser.parse_args()
-config_file = args.config_file
+config_file = args.config_file + ".txt"
 
 # Load config file specified
 config = configparser.ConfigParser()
@@ -35,16 +35,28 @@ output_dir = 'output/' + config["CASE"]["profile_name"] + '/'
 
 output_dirs = dirs.get_dirs(output_dir)
 
-# helper_functions.check_make([output_dir + '/pos', output_dir + '/img/efield', output_dir + '/img/phi',
-#                             output_dir + '/img/density', output_dir + '/img/energy',
-#                             output_dir + '/img/fft', output_dir + '/img/all_debug',
-#                             output_dir + '/img/phase'])
-
 # Define flags
 verbose = bool(int(config["FLAGS"]["verbose"]))
 ic_override = bool(int(config['FLAGS']['ic_override'])) # Whether to ignore specifying plasma properties and load pre-set initial particle conditions
 velocity_override = bool(int(config['FLAGS']['vel_override']))
-plot_all = bool(int(config['FLAGS']['plot_all']))
+#plot_all = bool(int(config['FLAGS']['plot_all']))
+
+# Define whawt to plot
+plot_efield = bool(int(config["PLOTS"]["efield"]))
+plot_phi = bool(int(config["PLOTS"]["phi"]))
+plot_density = bool(int(config["PLOTS"]["density"]))
+plot_energy = bool(int(config["PLOTS"]["energy"]))
+plot_alldebug = bool(int(config["PLOTS"]["all_debug"]))
+plot_phase = bool(int(config["PLOTS"]["phase"]))
+plot_fft = bool(int(config["PLOTS"]["fft"]))
+# Define what to save
+save_efield = bool(int(config["SAVE"]["efield"]))
+save_phi = bool(int(config["SAVE"]["phi"]))
+save_energy = bool(int(config["SAVE"]["energy"]))
+save_pos = bool(int(config["SAVE"]["pos"]))
+save_vel = bool(int(config["SAVE"]["vel"]))
+# Define how often to save data
+save_every_ntsteps = int(config["SAVE"]["save_every_ntsteps"])
 
 # Define physical constants
 q_phys = 1.60218E-19 # C
@@ -220,10 +232,12 @@ if safe_to_run:
             v_e_N[int(4*np.size(x_e_N)/10):int(6*np.size(x_e_N)/10)] = 0.1*delta_x_N/delta_t_N
 
     # Allocate total energy array
-    Etot_vs_t = np.zeros(n_tsteps)
-    KEi_vs_t = np.zeros(n_tsteps)
-    KEe_vs_t = np.zeros(n_tsteps)
-    PE_vs_t = np.zeros(n_tsteps)
+    n_tsteps_save = int(n_tsteps/save_every_ntsteps) + 1
+
+    Etot_vs_t = np.zeros(n_tsteps_save)
+    KEi_vs_t = np.zeros(n_tsteps_save)
+    KEe_vs_t = np.zeros(n_tsteps_save)
+    PE_vs_t = np.zeros(n_tsteps_save)
 
     # Macroparticle number arrays
     mnum_i_N = macroparticle_num*np.ones(np.size(x_i_N))
@@ -233,12 +247,18 @@ if safe_to_run:
     G_N = q_phys/(omega_p_phys**2*m_e_phys*lambda_d_phys**2) * G
 
     # Allocate time history of particle trajectories
-    x_i_N_T = np.zeros([n_tsteps, np.size(x_i_N)])
-    x_e_N_T = np.zeros([n_tsteps, np.size(x_e_N)])
-    v_i_N_T = np.zeros([n_tsteps, np.size(v_i_N)])
-    v_e_N_T = np.zeros([n_tsteps, np.size(v_e_N)])
-    E_N_T = np.zeros([n_tsteps, n_x])
-    phi_N_T = np.zeros([n_tsteps, n_x])
+    t_T = np.zeros(n_tsteps_save)
+    t_N_T = np.zeros(n_tsteps_save)
+    x_i_N_T = np.zeros([n_tsteps_save, np.size(x_i_N)])
+    x_e_N_T = np.zeros([n_tsteps_save, np.size(x_e_N)])
+    v_i_N_T = np.zeros([n_tsteps_save, np.size(v_i_N)])
+    v_e_N_T = np.zeros([n_tsteps_save, np.size(v_e_N)])
+    E_N_T = np.zeros([n_tsteps_save, n_x])
+    phi_N_T = np.zeros([n_tsteps_save, n_x])
+    energy_tot_T = np.zeros([n_tsteps_save, n_x])
+    energy_KEi_T = np.zeros([n_tsteps_save, n_x])
+    energy_KEe_T = np.zeros([n_tsteps_save, n_x])
+    energy_PE_T = np.zeros([n_tsteps_save, n_x])
 
     # Main Loop
     for t_N in np.arange(n_tsteps):
@@ -271,7 +291,7 @@ if safe_to_run:
 
         # Calculate total energy
         t0 = time.time()
-        Etot_vs_t[t_N], KEi_vs_t[t_N], KEe_vs_t[t_N], PE_vs_t[t_N] = pic_code.calculate_energy(v_i_N, v_e_N, v_i_new_N,
+        energy_tot, energy_KEi, energy_KEe, energy_PE = pic_code.calculate_energy(v_i_N, v_e_N, v_i_new_N,
                      v_e_new_N, mnum_i_N, mnum_e_N, rho_N, phi_N, delta_x,
                      omega_p_phys, lambda_d_phys, n0, m_e_phys, mi_me_ratio, x_i_N,
                      x_e_N, delta_x_N, n_x, E_N, verbose)
@@ -284,18 +304,26 @@ if safe_to_run:
             print("Total system energy = " + str(Etot_vs_t[t_N]) + " J/m^2")
 
         # Save particle positions
-        t0 = time.time()
-        x_i_N_T[t_N,:] = x_i_N
-        x_e_N_T[t_N,:] = x_e_N
-        v_i_N_T[t_N,:] = v_i_N
-        v_e_N_T[t_N,:] = v_e_N
-        E_N_T[t_N,:] = E_N
-        phi_N_T[t_N,:] = phi_N
-        t1 = time.time()
-        if verbose:
-            print("Saved particle positions: " + str(t1-t0) + " sec")
+        if t_N % save_every_ntsteps == 0:
+            save_num = int(t_N/save_every_ntsteps)
+            t0 = time.time()
+            t_N_T[save_num] = t_N
+            x_i_N_T[save_num,:] = x_i_N
+            x_e_N_T[save_num,:] = x_e_N
+            v_i_N_T[save_num,:] = v_i_N
+            v_e_N_T[save_num,:] = v_e_N
+            E_N_T[save_num,:] = E_N
+            phi_N_T[save_num,:] = phi_N
+            energy_tot_T[save_num,:] = energy_tot
+            energy_KEi_T[save_num,:] = energy_KEi
+            energy_KEe_T[save_num,:] = energy_KEe
+            energy_PE_T[save_num,:] = energy_PE
 
-        if plot_all:
+            t1 = time.time()
+            if verbose:
+                print("Saved particle positions: " + str(t1-t0) + " sec")
+
+        if plot_efield:
             t0 = time.time()
             # Plot normalized E-field
             plt.figure()
@@ -303,12 +331,14 @@ if safe_to_run:
             plt.savefig(output_dirs['e_field'] + "e_N" + str(t_N) + ".png")
             plt.close()
 
+        if plot_phi:
             plt.figure()
             plt.plot(np.arange(0,n_x,1), phi_N)
             plt.savefig(output_dirs['phi'] + "phi_N" + str(t_N) + ".png")
             plt.close()
 
-            # Plot normalized charge density
+        # Plot normalized charge density
+        if plot_density:
             plt.figure()
             plt.plot(np.arange(0,n_x,1), rho_N)
             plt.savefig(output_dirs['density'] + "rho_N" + str(t_N) + ".png")
@@ -318,7 +348,7 @@ if safe_to_run:
                 print("Saved E-field, phi, rho plots: " + str(t1-t0) + " sec")
 
         # Plot particle positions
-        if plot_all:
+        if plot_phase:
             t0 = time.time()
             x_i_NN = x_i_N/delta_x_N
             x_e_NN = x_e_N/delta_x_N
@@ -329,7 +359,8 @@ if safe_to_run:
             if verbose:
                 print("Saved phase plot: " + str(t1-t0) + " sec")
 
-            # Make plots of particles + fields superimposed at time t=0
+        # Make plots of particles + fields superimposed at time t=0
+        if plot_alldebug:
             t0 = time.time()
             pic_plot.all_plot(NP, n_x, x_i_NN, x_e_NN, E_N, phi_N, t_N, [0, n_x, -50000, 50000], output_dirs['all_debug'])
             t1 = time.time()
@@ -347,21 +378,29 @@ if safe_to_run:
             print("Updated positions and velocities: " + str(t1-t0) + " sec")
 
     # Save plot of total energy
-    pic_plot.energy_plot(n_tsteps, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t, output_dirs['energy'])
+    if plot_energy:
+        pic_plot.energy_plot(t_N_T, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t, output_dirs['energy'])
 
-    np.save(output_dirs['data'] + "ion_positions.npy", x_i_N_T)
-    np.save(output_dirs['data'] + "electron_positions.npy", x_e_N_T)
-    np.save(output_dirs['data'] + "ion_velocities.npy", v_i_N_T)
-    np.save(output_dirs['data'] + "electron_velocities.npy", v_e_N_T)
-    np.save(output_dirs['data'] + "Efield.npy", E_N_T)
-    np.save(output_dirs['data'] + "phifield.npy", phi_N_T)
-    np.save(output_dirs['data'] + "total_energy.npy", Etot_vs_t)
-    np.save(output_dirs['data'] + "KEi.npy", KEi_vs_t)
-    np.save(output_dirs['data'] + "KEe.npy", KEe_vs_t)
-    np.save(output_dirs['data'] + "PE.npy", PE_vs_t)
+    # Save what is specified
+    if save_pos:
+        np.save(output_dirs['data'] + "ion_positions.npy", x_i_N_T)
+        np.save(output_dirs['data'] + "electron_positions.npy", x_e_N_T)
+    if save_vel:
+        np.save(output_dirs['data'] + "ion_velocities.npy", v_i_N_T)
+        np.save(output_dirs['data'] + "electron_velocities.npy", v_e_N_T)
+    if save_efield:
+        np.save(output_dirs['data'] + "Efield.npy", E_N_T)
+    if save_phi:
+        np.save(output_dirs['data'] + "phifield.npy", phi_N_T)
+    if save_energy:
+        np.save(output_dirs['data'] + "total_energy.npy", Etot_vs_t)
+        np.save(output_dirs['data'] + "KEi.npy", KEi_vs_t)
+        np.save(output_dirs['data'] + "KEe.npy", KEe_vs_t)
+        np.save(output_dirs['data'] + "PE.npy", PE_vs_t)
 
 
     # FFT output position
-    if NP < 1000:
-        for p_n in np.arange(NP):
-            pic_plot.fft_time_plot(n_tsteps, np.abs(np.fft.fft(x_e_N_T[:,p_n])), p_n, output_dirs['fft'])
+    if plot_fft:
+        if NP < 1000:
+            for p_n in np.arange(NP):
+                pic_plot.fft_time_plot(n_tsteps, np.abs(np.fft.fft(x_e_N_T[:,p_n])), p_n, output_dirs['fft'])

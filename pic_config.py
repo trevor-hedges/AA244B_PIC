@@ -15,6 +15,25 @@ config['FLAGS']['ic_override'] = "0"
 config['FLAGS']['vel_override'] = "0"
 config['FLAGS']['plot_all'] = "0"
 
+# Plot flags
+config['PLOTS'] = {}
+config['PLOTS']['efield'] = "0"
+config['PLOTS']['phi'] = "0"
+config['PLOTS']['density'] = "0"
+config['PLOTS']['energy'] = "0"
+config['PLOTS']['all_debug'] = "0"
+config['PLOTS']['phase'] = "1"
+config['PLOTS']['fft'] = "0"
+
+# Save data flags
+config['SAVE'] = {}
+config['SAVE']['efield'] = "0"
+config['SAVE']['phi'] = "0"
+config['SAVE']['energy'] = "0"
+config['SAVE']['pos'] = "1"
+config['SAVE']['vel'] = "1"
+config['SAVE']['save_every_ntsteps'] = input("Specify number of timesteps per data-save: ")
+
 # Values to prompt user for
 config["SETTINGS"] = {}
 config['SETTINGS']['n0'] = input("Specify background density n0: ")

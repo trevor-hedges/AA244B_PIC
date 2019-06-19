@@ -27,14 +27,14 @@ def all_plot(NP, n_x, x_i_N, x_e_N, E_N, phi_N, tstep, axes, output_dir):
     plt.savefig(output_dir + str(tstep) + '.png')
     plt.close()
 
-def energy_plot(n_tsteps, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t, output_dir):
+def energy_plot(t_N_T, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t, output_dir):
 
     plt.figure()
-    plt.plot(np.arange(n_tsteps), Etot_vs_t, label='Total energy')
-    plt.plot(np.arange(n_tsteps), KEi_vs_t, label='Ion KE')
-    plt.plot(np.arange(n_tsteps), KEe_vs_t, label='Electron KE')
-    plt.plot(np.arange(n_tsteps), KEi_vs_t+KEe_vs_t, label='Total KE')
-    plt.plot(np.arange(n_tsteps), PE_vs_t, label='Electric PE')
+    plt.plot(t_N_T, Etot_vs_t, label='Total energy')
+    plt.plot(t_N_T, KEi_vs_t, label='Ion KE')
+    plt.plot(t_N_T, KEe_vs_t, label='Electron KE')
+    plt.plot(t_N_T, KEi_vs_t+KEe_vs_t, label='Total KE')
+    plt.plot(t_N_T, PE_vs_t, label='Electric PE')
     plt.title("Total energy vs time")
     plt.xlabel("Timestep")
     plt.ylabel("Energy (J/m^2)")
