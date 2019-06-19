@@ -14,11 +14,17 @@ plt.ioff()
 import quiet_start
 import pic_code
 import pic_plot
+import configparser
+
+# Load config file specified
+config = configparser.ConfigParser()
+config.read("config.txt")
 
 # Define flags
-verbose = 0
-ic_override = 0 # Whether to ignore specifying plasma properties and load pre-set initial particle conditions
-velocity_override = 0
+verbose = bool(int(config["FLAGS"]["verbose"]))
+ic_override = bool(int(config['FLAGS']['ic_override'])) # Whether to ignore specifying plasma properties and load pre-set initial particle conditions
+velocity_override = bool(int(config['FLAGS']['vel_override']))
+plot_all = bool(int(config['FLAGS']['plot_all']))
 
 # Define physical constants
 q_phys = 1.60218E-19 # C
@@ -30,25 +36,25 @@ K = 1.3807E-23 # J/K
 G = 0 # "Ground" potential
 
 # "True" plasma density to simulate
-n0 = 1E8
+n0 = float(config["SETTINGS"]["n0"])
 
 q_to_m_i = q_phys/m_i_phys
 q_to_m_e = q_phys/m_e_phys
 
 # Define simulation constants
-mi_me_ratio = 50
+mi_me_ratio = float(config["SETTINGS"]["mass_ratio"])
 m_e_sim = m_e_phys
 m_i_sim = mi_me_ratio*m_e_phys # Mass of simulated ion
 
 # Define number of particles per macroparticle
-macroparticle_num = 100000
+macroparticle_num = float(config["SETTINGS"]["M"])
 
 print('simulated macroparticle me=' + str(macroparticle_num*m_e_sim) + " kg")
 print('simulated macroparticle mi=' + str(macroparticle_num*m_i_sim) + " kg")
 
 # Calculate electron Debye length
-Ti = 0; # K
-Te = 300; # K
+Ti = float(config["SETTINGS"]["Ti"]); # K
+Te = float(config["SETTINGS"]["Te"]); # K
 lambda_d_phys = np.sqrt(eps0*K*Te/(n0*q_phys**2)) # meters
 print("lambda_d=" + str(lambda_d_phys) + " m")
 
@@ -61,8 +67,8 @@ N_d = n0*4/3*np.pi*lambda_d_phys**3
 print("N_d=" + str(N_d))
 
 # Define sim params (make these inputs later)
-delta_x = lambda_d_phys/10 # meters
-delta_t = 0.01/omega_p_phys # s^-1
+delta_x = lambda_d_phys/float(config["SETTINGS"]["ld_per_dx"]) # meters
+delta_t = 1/(float(config["SETTINGS"]["dt_per_wp"])*omega_p_phys) # s^-1
 print('delta_x=' + str(delta_x) + ' m')
 print('delta_t=' + str(delta_t) + ' s')
 
@@ -83,8 +89,8 @@ vthe_sim_N = np.sqrt(2*K*Te/m_e_sim)/(omega_p_phys*lambda_d_phys)
 print("Normalized ion thermal velocity = " + str(vthi_sim_N))
 print("Normalized electron thermal velocity = " + str(vthe_sim_N))
 
-n_x = 101
-n_tsteps = 4096 # Power of 2 to make FFT at end go faster
+n_x = int(config["SETTINGS"]["n_x"])
+n_tsteps = int(config["SETTINGS"]["n_tsteps"]) # Power of 2 to make FFT at end go faster
 t_tot = delta_t*n_tsteps
 plasma_cycles = (omega_p_phys/(2*np.pi))*t_tot
 print("Total time to be simulated: " + str(t_tot) + " seconds; " + str(plasma_cycles) + " plasma oscillations")
@@ -116,11 +122,6 @@ if NP <= 1000000:
 else:
     safe_to_run = False
     print('WAY TOO MANY PARTICLES!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-
-
-
-
-
 
 
 # Tests...
@@ -182,8 +183,14 @@ if safe_to_run:
             print("Initial electron locations: " + str(x_e_N))
 
         # Initialize particle velocities using not-quiet start technique
+        t0 = time.time()
         v_i_N = quiet_start.maxwellian(NP, 0, vthi_sim_N)
         v_e_N = quiet_start.maxwellian(NP, 0, vthe_sim_N)
+        t1 = time.time()
+        if verbose:
+            # Make this go to log file
+            print("Initial velocity profiles: " + str(t1-t0) + " sec")
+
 #        if verbose:
 #            print("Initial ion normalized velocities: " + str(v_i_N))
 #            print("Initial electron normalized velocities: " + str(v_e_N))
@@ -215,62 +222,109 @@ if safe_to_run:
 
     # Main Loop
     for t_N in np.arange(n_tsteps):
-        print('evaluating timestep ' + str(t_N))
-        rho_N = pic_code.interpolate_charges(n_x, x_i_N, x_e_N, mnum_i_N, mnum_e_N, lambda_d_phys, delta_x_N, n0_N)
-        phi_N = pic_code.solve_potential_periodic(n_x, rho_N, G_N, delta_x_N)
-        E_N = pic_code.solve_efield_from_potential_periodic(phi_N, delta_x_N)
+        if verbose:
+            print('evaluating timestep ' + str(t_N))
 
+        t0 = time.time()
+        rho_N = pic_code.interpolate_charges(n_x, x_i_N, x_e_N, mnum_i_N, mnum_e_N, lambda_d_phys, delta_x_N, n0_N)
+        t1 = time.time()
+        if verbose:
+            print("Interpolated charges: " + str(t1-t0) + " sec")
+
+        t0 = time.time()
+        phi_N = pic_code.solve_potential_periodic(n_x, rho_N, G_N, delta_x_N)
+        t1 = time.time()
+        if verbose:
+            print("Solved for potential function: " + str(t1-t0) + " sec")
+
+        t0 = time.time()
+        E_N = pic_code.solve_efield_from_potential_periodic(phi_N, delta_x_N)
+        t1 = time.time()
+        if verbose:
+            print("Solved for E-field: " + str(t1-t0) + " sec")
+
+        t0 = time.time()
         x_i_new_N, x_e_new_N, v_i_new_N, v_e_new_N = pic_code.integrate_motion(n_x, E_N, x_i_N, x_e_N, v_i_N, v_e_N, delta_x_N, delta_t_N, mi_me_ratio)
+        t1 = time.time()
+        if verbose:
+            print("Integrated motion: " + str(t1-t0) + " sec")
 
         # Calculate total energy
+        t0 = time.time()
         Etot_vs_t[t_N], KEi_vs_t[t_N], KEe_vs_t[t_N], PE_vs_t[t_N] = pic_code.calculate_energy(v_i_N, v_e_N, v_i_new_N,
                      v_e_new_N, mnum_i_N, mnum_e_N, rho_N, phi_N, delta_x,
                      omega_p_phys, lambda_d_phys, n0, m_e_phys, mi_me_ratio, x_i_N,
                      x_e_N, delta_x_N, n_x, E_N, verbose)
+        t1 = time.time()
+        if verbose:
+            print("Calculated total energy: " + str(t1-t0) + " sec")
 
         # Print to console
-        print("Total system energy = " + str(Etot_vs_t[t_N]) + " J/m^2")
+        if verbose:
+            print("Total system energy = " + str(Etot_vs_t[t_N]) + " J/m^2")
 
         # Save particle positions
+        t0 = time.time()
         x_i_N_T[t_N,:] = x_i_N
         x_e_N_T[t_N,:] = x_e_N
         v_i_N_T[t_N,:] = v_i_N
         v_e_N_T[t_N,:] = v_e_N
         E_N_T[t_N,:] = E_N
         phi_N_T[t_N,:] = phi_N
+        t1 = time.time()
+        if verbose:
+            print("Saved particle positions: " + str(t1-t0) + " sec")
 
-        # Plot normalized E-field
-        plt.figure()
-        plt.plot(np.arange(0,n_x,1), E_N)
-        plt.savefig("img/efield/e_N" + str(t_N) + ".png")
-        plt.close()
+        if plot_all:
+            t0 = time.time()
+            # Plot normalized E-field
+            plt.figure()
+            plt.plot(np.arange(0,n_x,1), E_N)
+            plt.savefig("img/efield/e_N" + str(t_N) + ".png")
+            plt.close()
 
-        plt.figure()
-        plt.plot(np.arange(0,n_x,1), phi_N)
-        plt.savefig("img/phi/phi_N" + str(t_N) + ".png")
-        plt.close()
+            plt.figure()
+            plt.plot(np.arange(0,n_x,1), phi_N)
+            plt.savefig("img/phi/phi_N" + str(t_N) + ".png")
+            plt.close()
 
-        # Plot normalized charge density
-        plt.figure()
-        plt.plot(np.arange(0,n_x,1), rho_N)
-        plt.savefig("img/density/rho_N" + str(t_N) + ".png")
-        plt.close()
+            # Plot normalized charge density
+            plt.figure()
+            plt.plot(np.arange(0,n_x,1), rho_N)
+            plt.savefig("img/density/rho_N" + str(t_N) + ".png")
+            plt.close()
+            t1 = time.time()
+            if verbose:
+                print("Saved E-field, phi, rho plots: " + str(t1-t0) + " sec")
 
         # Plot particle positions
-        x_i_NN = x_i_N/delta_x_N
-        x_e_NN = x_e_N/delta_x_N
-        v_i_NN = v_i_N*delta_t_N/delta_x_N
-        v_e_NN = v_e_N*delta_t_N/delta_x_N
-        pic_plot.phase_plot(x_i_NN, x_e_NN, v_i_NN, v_e_NN, t_N, [0, n_x, -1, 1])
+        if plot_all:
+            t0 = time.time()
+            x_i_NN = x_i_N/delta_x_N
+            x_e_NN = x_e_N/delta_x_N
+            v_i_NN = v_i_N*delta_t_N/delta_x_N
+            v_e_NN = v_e_N*delta_t_N/delta_x_N
+            pic_plot.phase_plot(x_i_NN, x_e_NN, v_i_NN, v_e_NN, t_N, [0, n_x, -1, 1])
+            t1 = time.time()
+            if verbose:
+                print("Saved phase plot: " + str(t1-t0) + " sec")
 
-        # Make plots of particles + fields superimposed at time t=0
-        pic_plot.all_plot(NP, n_x, x_i_NN, x_e_NN, E_N, phi_N, t_N, [0, n_x, -50000, 50000])
+            # Make plots of particles + fields superimposed at time t=0
+            t0 = time.time()
+            pic_plot.all_plot(NP, n_x, x_i_NN, x_e_NN, E_N, phi_N, t_N, [0, n_x, -50000, 50000])
+            t1 = time.time()
+            if verbose:
+                print("Saved all-plot: " + str(t1-t0) + " sec")
 
         # Set new
+        t0 = time.time()
         x_i_N = x_i_new_N
         x_e_N = x_e_new_N
         v_i_N = v_i_new_N
         v_e_N = v_e_new_N
+        t1 = time.time()
+        if verbose:
+            print("Updated positions and velocities: " + str(t1-t0) + " sec")
 
     # Save plot of total energy
     pic_plot.energy_plot(n_tsteps, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t)

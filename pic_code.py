@@ -36,12 +36,8 @@ def solve_potential_periodic(n_x, rho_N, G_N, delta_x_N):
     """Given charge densities, solves for potential on 1D periodic grid"""
 
     # Construct A matrix
-    A = np.diag(np.ones(n_x-2),1)+np.diag(-2*np.ones(n_x-1),0)+np.diag(np.ones(n_x-2),-1)
-    A = -A
-    b = rho_N[1:]
-
-    # Scale
-    b = b*delta_x_N**2
+    A = -(np.diag(np.ones(n_x-2),1)+np.diag(-2*np.ones(n_x-1),0)+np.diag(np.ones(n_x-2),-1))
+    b = rho_N[1:]*delta_x_N**2
 
     b[0] += G_N
     b[-1] += G_N
