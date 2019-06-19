@@ -4,6 +4,10 @@ filename = input("Specify config base filename: ")
 
 config = configparser.ConfigParser()
 
+# case settings
+config['CASE'] = {}
+config['CASE']['profile_name'] = input("Specify case profile name: ")
+
 # Default values changeable in file
 config['FLAGS'] = {}
 config['FLAGS']['verbose'] = "0"

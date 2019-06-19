@@ -1,17 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def phase_plot(x_i_N, x_e_N, v_i_N, v_e_N, tstep, axes):
+def phase_plot(x_i_N, x_e_N, v_i_N, v_e_N, tstep, axes, output_dir):
 
     plt.figure()
     plt.scatter(x_i_N, v_i_N)
     plt.scatter(x_e_N, v_e_N)
     plt.xlim(axes[0:2])
     plt.ylim(axes[2:4])
-    plt.savefig('img/phase/sct_' + str(tstep) + '.png')
+    plt.savefig(output_dir + '/img/phase/sct_' + str(tstep) + '.png')
     plt.close()
 
-def all_plot(NP, n_x, x_i_N, x_e_N, E_N, phi_N, tstep, axes):
+def all_plot(NP, n_x, x_i_N, x_e_N, E_N, phi_N, tstep, axes, output_dir):
 
     xr = np.linspace(0,n_x-1,n_x)
     xrp1 = np.linspace(0,n_x,n_x+1)
@@ -24,10 +24,10 @@ def all_plot(NP, n_x, x_i_N, x_e_N, E_N, phi_N, tstep, axes):
     plt.xlim(axes[0:2])
 #    plt.ylim(axes[2:4])
     plt.legend()
-    plt.savefig('img/all_debug/all_' + str(tstep) + '.png')
+    plt.savefig(output_dir + '/img/all_debug/all_' + str(tstep) + '.png')
     plt.close()
 
-def energy_plot(n_tsteps, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t):
+def energy_plot(n_tsteps, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t, output_dir):
 
     plt.figure()
     plt.plot(np.arange(n_tsteps), Etot_vs_t, label='Total energy')
@@ -39,14 +39,14 @@ def energy_plot(n_tsteps, Etot_vs_t, KEi_vs_t, KEe_vs_t, PE_vs_t):
     plt.xlabel("Timestep")
     plt.ylabel("Energy (J/m^2)")
     plt.legend()
-    plt.savefig("img/energy/energy_vs_time.png")
+    plt.savefig(output_dir + "/img/energy/energy_vs_time.png")
     plt.close()
 
-def fft_time_plot(n_tsteps, fft_abs, p_n):
+def fft_time_plot(n_tsteps, fft_abs, p_n, output_dir):
 
     plt.figure()
     plt.plot(np.arange(n_tsteps), fft_abs)
-    plt.savefig("img/fft/fft_e_" + str(p_n) + ".png")
+    plt.savefig(output_dir + "/img/fft/fft_e_" + str(p_n) + ".png")
     plt.close()
 
-    np.save("img/fft/fft_e_" + str(p_n), fft_abs)
+    np.save(output_dir + "/img/fft/fft_e_" + str(p_n), fft_abs)
