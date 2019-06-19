@@ -8,6 +8,7 @@ Created on Wed May 15 08:27:32 2019
 
 import time
 import os, sys
+import argparse
 import configparser
 import numpy as np
 import numpy.linalg as linalg
@@ -19,9 +20,15 @@ import pic_code
 import pic_plot
 import helper_functions
 
+# Parse arguments
+argparser = argparse.ArgumentParser()
+argparser.add_argument("config_file", help="Name of config file to run")
+args = argparser.parse_args()
+config_file = args.config_file
+
 # Load config file specified
 config = configparser.ConfigParser()
-config.read("config.txt")
+config.read(config_file)
 
 # Directory to save output files to
 output_dir = 'output/' + config["CASE"]["profile_name"] + '/'
